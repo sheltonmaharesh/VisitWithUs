@@ -56,7 +56,7 @@ jobs:
           files = api.list_repo_files(repo_id=repo, repo_type="dataset")
           needed = "Master/Data/tourism.csv"
           if needed not in files:
-              raise SystemExit(f"Missing {needed} in {repo}. Found: {files[:20]}...")
+              raise SystemExit(f"Missing {needed} in {repo}.")
           print("OK dataset repo:", repo)
           print("OK file present:", needed)
           PY
@@ -77,7 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy scikit-learn datasets huggingface_hub
+          pip install pandas numpy scikit-learn datasets huggingface_hub python-dotenv
 
       - name: Run Data Preparation
         run: |
@@ -95,7 +95,7 @@ jobs:
           needed = {"Master/Data/train.csv", "Master/Data/test.csv"}
           missing = needed - files
           if missing:
-            raise SystemExit(f"Missing files in dataset repo: {missing}")
+              raise SystemExit(f"Missing files in dataset repo: {missing}")
           print("OK train/test present in dataset repo")
           PY
 
@@ -115,7 +115,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas numpy scikit-learn joblib datasets huggingface_hub mlflow
+          pip install pandas numpy scikit-learn joblib datasets huggingface_hub python-dotenv mlflow xgboost seaborn matplotlib
 
       - name: Ensure local folders exist
         run: |
@@ -136,7 +136,10 @@ jobs:
           repo = os.environ["HF_MODEL_REPO"]
           api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
           info = api.repo_info(repo_id=repo, repo_type="model")
-          print("OK model repo:", info.repo_id)
+          print("OK model repo:", repo)
+          # list a few files for visibility
+          files = api.list_repo_files(repo_id=repo, repo_type="model")
+          print("Model repo files (sample):", files[:20])
           PY
 
   deploy-to-spaces:
@@ -175,5 +178,7 @@ jobs:
           repo = os.environ["HF_SPACE_REPO"]
           api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
           info = api.repo_info(repo_id=repo, repo_type="space")
-          print("OK space repo:", info.repo_id)
+          print("OK space repo:", repo)
+          files = api.list_repo_files(repo_id=repo, repo_type="space")
+          print("Space files (sample):", files[:20])
           PY
