@@ -5,3 +5,4 @@ mlruns/
 Master/mlruns/
 Master/Model_Dump_JOBLIB/
 .DS_Store
+mlflow.db
