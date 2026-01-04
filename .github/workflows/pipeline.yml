@@ -46,15 +46,19 @@ jobs:
           cd Master
           python main.py --job register
 
-      - name: Verify dataset repo exists
+      - name: Verify dataset repo + file exists
         run: |
           python - <<'PY'
           import os
           from huggingface_hub import HfApi
           repo = os.environ["HF_DATASET_REPO"]
           api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
-          info = api.repo_info(repo_id=repo, repo_type="dataset")
-          print("OK dataset repo:", info.repo_id)
+          files = api.list_repo_files(repo_id=repo, repo_type="dataset")
+          needed = "Master/Data/tourism.csv"
+          if needed not in files:
+              raise SystemExit(f"Missing {needed} in {repo}. Found: {files[:20]}...")
+          print("OK dataset repo:", repo)
+          print("OK file present:", needed)
           PY
 
   data-preparation:
