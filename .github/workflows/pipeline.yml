@@ -1,0 +1,191 @@
+name: Visit With Us - Tourism Prediction Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Master/Data/tourism.csv"
+      - "Master/*.py"
+      - "Master/Deployment/**"
+      - ".github/workflows/pipeline.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.12"
+  HF_DATASET_REPO: "sheltonmaharesh/Tourism-visit-with-us-dataset"
+  HF_MODEL_REPO: "sheltonmaharesh/Tourism_Prediction_Model"
+  HF_SPACE_REPO: "sheltonmaharesh/Tourism-Prediction-Model-Space"
+
+jobs:
+  register-dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub python-dotenv
+
+      - name: Debug - list files
+        run: |
+          ls -la
+          ls -la Master || true
+          ls -la Master/Data || true
+
+      - name: Run Data Registration
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          cd Master
+          python main.py --job register
+
+      - name: Verify dataset repo exists
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          repo = os.environ["HF_DATASET_REPO"]
+          api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
+          info = api.repo_info(repo_id=repo, repo_type="dataset")
+          print("OK dataset repo:", info.repo_id)
+          PY
+
+  data-preparation:
+    runs-on: ubuntu-latest
+    needs: register-dataset
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn datasets huggingface_hub python-dotenv
+
+      - name: Run Data Preparation
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          cd Master
+          python main.py --job prepare
+
+      - name: Verify train/test uploaded to HF
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          repo = os.environ["HF_DATASET_REPO"]
+          api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
+          files = set(api.list_repo_files(repo_id=repo, repo_type="dataset"))
+          needed = {"Master/Data/train.csv", "Master/Data/test.csv"}
+          missing = needed - files
+          if missing:
+            raise SystemExit(f"Missing files in dataset repo: {missing}")
+          print("OK train/test present in dataset repo")
+          PY
+
+  model-building:
+    runs-on: ubuntu-latest
+    needs: data-preparation
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn joblib datasets huggingface_hub python-dotenv mlflow
+
+      - name: Ensure local folders exist
+        run: |
+          mkdir -p Master/Model_Dump_JOBLIB
+          mkdir -p Master/mlruns
+          mkdir -p Master/Data
+
+      - name: Run Model Building
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          cd Master
+          python main.py --job modelbuilding
+
+      - name: Verify model repo exists
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          repo = os.environ["HF_MODEL_REPO"]
+          api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
+          info = api.repo_info(repo_id=repo, repo_type="model")
+          print("OK model repo:", info.repo_id)
+          PY
+
+  deploy-to-spaces:
+    runs-on: ubuntu-latest
+    needs: model-building
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub python-dotenv
+
+      - name: Sanity check Deployment folder
+        run: |
+          ls -la Master/Deployment
+          # Docker must be named exactly Dockerfile (case-sensitive)
+          test -f Master/Deployment/Dockerfile
+
+      - name: Deploy to Hugging Face Space
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          cd Master
+          python main.py --job deploy
+
+      - name: Verify space repo exists
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          repo = os.environ["HF_SPACE_REPO"]
+          api = HfApi(token=os.environ["HUGGINGFACE_TOKEN"])
+          info = api.repo_info(repo_id=repo, repo_type="space")
+          print("OK space repo:", info.repo_id)
+          PY
